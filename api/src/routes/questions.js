@@ -1,0 +1,53 @@
+import { Router } from 'express';
+import { query } from '../db.js';
+import { requireAdmin } from '../auth.js';
+import { HttpError } from '../errors.js';
+import { getQueryRow } from './queries.js';
+
+const router = Router();
+// Mounted at /api — guard per-route (see the guard placement rule in queries.js).
+
+router.param('id', (req, res, next, id) => {
+  if (!/^\d+$/.test(id)) return next(new HttpError(404, 'not found'));
+  next();
+});
+
+router.post('/queries/:id/questions', requireAdmin, async (req, res) => {
+  const q = await getQueryRow(req.params.id);
+  const text = req.body?.text;
+  if (typeof text !== 'string' || !text.trim()) throw new HttpError(422, 'text is required');
+  const { rows } = await query(
+    `INSERT INTO questions (query_id, position, text)
+     VALUES ($1, (SELECT COALESCE(MAX(position), 0) + 1 FROM questions WHERE query_id = $1), $2)
+     RETURNING *`,
+    [q.id, text.trim()]
+  );
+  res.status(201).json(rows[0]);
+});
+
+async function getQuestionRow(id) {
+  const { rows } = await query('SELECT * FROM questions WHERE id = $1', [id]);
+  if (!rows[0]) throw new HttpError(404, 'question not found');
+  return rows[0];
+}
+
+router.patch('/questions/:id', requireAdmin, async (req, res) => {
+  const existing = await getQuestionRow(req.params.id);
+  const text = req.body?.text ?? existing.text;
+  const position = req.body?.position ?? existing.position;
+  if (typeof text !== 'string' || !text.trim()) throw new HttpError(422, 'text is required');
+  if (!Number.isInteger(position) || position < 1) throw new HttpError(422, 'position must be a positive integer');
+  const { rows } = await query(
+    'UPDATE questions SET text = $1, position = $2 WHERE id = $3 RETURNING *',
+    [text.trim(), position, existing.id]
+  );
+  res.json(rows[0]);
+});
+
+router.delete('/questions/:id', requireAdmin, async (req, res) => {
+  const existing = await getQuestionRow(req.params.id);
+  await query('DELETE FROM questions WHERE id = $1', [existing.id]); // cascades; file cleanup added in Task 7
+  res.status(204).end();
+});
+
+export default router;
