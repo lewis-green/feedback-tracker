@@ -1,0 +1,5 @@
+node_modules/
+api/.env
+api/uploads/
+api/test/tmp-uploads/
+web/dist/
