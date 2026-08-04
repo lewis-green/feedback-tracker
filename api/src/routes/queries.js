@@ -3,8 +3,11 @@ import { randomBytes } from 'node:crypto';
 import { query } from '../db.js';
 import { requireAdmin } from '../auth.js';
 import { HttpError } from '../errors.js';
+import { getProject } from './projects.js';
 
 const STATUSES = ['draft', 'sent', 'closed'];
+// 256-bit token: collision probability is negligible (birthday bound ~2^128); a
+// unique-violation 500 is acceptable, no retry logic wanted.
 const newToken = () => randomBytes(32).toString('base64url');
 
 const router = Router();
@@ -25,20 +28,24 @@ export async function getQueryRow(id) {
 
 // POST /api/projects/:id/queries is mounted here for cohesion with the queries resource.
 router.post('/projects/:id/queries', requireAdmin, async (req, res) => {
-  const { rows: projects } = await query('SELECT id FROM projects WHERE id = $1', [req.params.id]);
-  if (!projects[0]) throw new HttpError(404, 'project not found');
-  const { title, body = '' } = req.body ?? {};
+  const project = await getProject(req.params.id);
+  const { title, body } = req.body ?? {};
   if (typeof title !== 'string' || !title.trim()) throw new HttpError(422, 'title is required');
+  if (body !== undefined && typeof body !== 'string') throw new HttpError(422, 'body must be a string');
   const { rows } = await query(
     `INSERT INTO queries (project_id, title, body, share_token)
      VALUES ($1, $2, $3, $4) RETURNING *`,
-    [projects[0].id, title.trim(), String(body), newToken()]
+    [project.id, title.trim(), body ?? '', newToken()]
   );
   res.status(201).json(rows[0]);
 });
 
 router.get('/queries/:id', requireAdmin, async (req, res) => {
-  const q = await getQueryRow(req.params.id);
+  const { rows: queryRows } = await query('SELECT *, now() AS read_at FROM queries WHERE id = $1', [
+    req.params.id,
+  ]);
+  if (!queryRows[0]) throw new HttpError(404, 'query not found');
+  const q = queryRows[0];
   const { rows: projectRows } = await query('SELECT id, name, client_name FROM projects WHERE id = $1', [
     q.project_id,
   ]);
@@ -53,9 +60,14 @@ router.get('/queries/:id', requireAdmin, async (req, res) => {
       ORDER BY created_at, id`,
     [q.id, questions.map((x) => x.id)]
   );
-  await query('UPDATE queries SET answers_seen_at = now() WHERE id = $1', [q.id]);
+  // Stamp with the read-time timestamp (not now()) so an answer that lands between
+  // the reads above and this UPDATE isn't marked seen without ever being shown.
+  await query('UPDATE queries SET answers_seen_at = $2 WHERE id = $1', [q.id, q.read_at]);
+  const { read_at, ...queryFields } = q;
+  // answers_seen_at in the response is deliberately the PRE-stamp value so the UI
+  // can highlight answers newer than the admin's last visit — don't "fix" this.
   res.json({
-    ...q,
+    ...queryFields,
     project: projectRows[0],
     questions: questions.map((qs) => ({
       ...qs,

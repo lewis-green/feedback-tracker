@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
-import { setupDb, resetDb, adminAgent, closePool, query } from './helpers.js';
+import { setupDb, resetDb, adminAgent, anonAgent, closePool, query } from './helpers.js';
 
 beforeAll(setupDb);
 beforeEach(resetDb);
@@ -72,5 +72,14 @@ describe('queries CRUD', () => {
     const { body: q } = await agent.post(`/api/projects/${p.id}/queries`).send({ title: 'T' });
     await agent.delete(`/api/queries/${q.id}`).expect(204);
     await agent.get(`/api/queries/${q.id}`).expect(404);
+  });
+
+  it('rejects anonymous requests to every queries route with 401', async () => {
+    const agent = anonAgent();
+    await agent.post('/api/projects/1/queries').send({ title: 'T' }).expect(401);
+    await agent.get('/api/queries/1').expect(401);
+    await agent.patch('/api/queries/1').send({ title: 'T' }).expect(401);
+    await agent.post('/api/queries/1/regenerate-token').expect(401);
+    await agent.delete('/api/queries/1').expect(401);
   });
 });
