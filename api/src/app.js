@@ -2,6 +2,8 @@ import express from 'express';
 import helmet from 'helmet';
 import cookieSession from 'cookie-session';
 import rateLimit from 'express-rate-limit';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { errorHandler, HttpError } from './errors.js';
 import createAuthRouter from './routes/auth.js';
 import projectRoutes from './routes/projects.js';
@@ -70,6 +72,18 @@ export function createApp() {
   app.use('/api/share', shareHeaders, shareLimiter, createShareRouter({ uploadLimiter: shareUploadLimiter }));
 
   app.use('/api', (req, res, next) => next(new HttpError(404, 'not found')));
+
+  if (process.env.NODE_ENV === 'production') {
+    const webDist = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'web', 'dist');
+    app.use(express.static(webDist));
+    app.use((req, res, next) => {
+      if (req.method === 'GET' && !req.path.startsWith('/api')) {
+        return res.sendFile(path.join(webDist, 'index.html'));
+      }
+      next();
+    });
+  }
+
   app.use(errorHandler);
   return app;
 }
