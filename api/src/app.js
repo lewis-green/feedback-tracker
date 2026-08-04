@@ -4,6 +4,7 @@ import cookieSession from 'cookie-session';
 import { errorHandler, HttpError } from './errors.js';
 import createAuthRouter from './routes/auth.js';
 import projectRoutes from './routes/projects.js';
+import queryRoutes from './routes/queries.js';
 
 export function createApp() {
   for (const k of ['SESSION_SECRET', 'ADMIN_PASSWORD']) {
@@ -29,6 +30,7 @@ export function createApp() {
 
   app.use('/api', createAuthRouter());
   app.use('/api/projects', projectRoutes);
+  app.use('/api', queryRoutes);
 
   app.use('/api', (req, res, next) => next(new HttpError(404, 'not found')));
   app.use(errorHandler);
