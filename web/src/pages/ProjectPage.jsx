@@ -27,8 +27,12 @@ export default function ProjectPage() {
 
   async function deleteProject() {
     if (!window.confirm(`Delete project "${data.project.name}" and all its queries?`)) return;
-    await api.delete(`/api/projects/${id}`);
-    navigate('/');
+    try {
+      await api.delete(`/api/projects/${id}`);
+      navigate('/');
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   if (error) return <p className="text-sm text-red-600">{error}</p>;

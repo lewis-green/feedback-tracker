@@ -26,6 +26,7 @@ export default function Dashboard() {
     }
   }
 
+  if (error && !projects) return <p className="text-sm text-red-600">{error}</p>;
   if (!projects) return null;
   return (
     <div className="space-y-6">
@@ -35,13 +36,16 @@ export default function Dashboard() {
         {projects.length === 0 && <li className="p-4 text-sm text-neutral-500">No projects yet.</li>}
         {projects.map((p) => (
           <li key={p.id}>
-            <Link to={`/projects/${p.id}`} className="flex items-center justify-between p-4 hover:bg-neutral-50">
-              <div>
-                <span className="font-medium">{p.name}</span>
+            <Link
+              to={`/projects/${p.id}`}
+              className="flex items-center justify-between gap-3 p-4 hover:bg-neutral-50"
+            >
+              <div className="min-w-0">
+                <span className="truncate font-medium">{p.name}</span>
                 {p.client_name && <span className="ml-2 text-sm text-neutral-500">{p.client_name}</span>}
               </div>
               {p.unseen_answers > 0 && (
-                <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+                <span className="shrink-0 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
                   {p.unseen_answers} new
                 </span>
               )}
