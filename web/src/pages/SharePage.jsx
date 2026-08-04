@@ -21,6 +21,9 @@ function AnswerBox({ token, question, readOnly, onChanged }) {
     } catch (err) {
       setState('error');
       setMessage(err.message);
+      // 403 means the query was closed after this page loaded — reload so the
+      // whole page flips to the read-only view instead of leaving a live form.
+      if (err instanceof ApiError && err.status === 403) onChanged();
     }
   }
 
@@ -38,6 +41,7 @@ function AnswerBox({ token, question, readOnly, onChanged }) {
     } catch (err) {
       setState('error');
       setMessage(err.message);
+      if (err instanceof ApiError && err.status === 403) onChanged();
     }
     e.target.value = '';
   }
