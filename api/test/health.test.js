@@ -14,4 +14,13 @@ describe('GET /api/health', () => {
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ error: 'not found' });
   });
+
+  it('returns a clean 400 for malformed JSON', async () => {
+    const res = await supertest(createApp())
+      .post('/api/health')
+      .set('Content-Type', 'application/json')
+      .send('{bad json');
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'invalid JSON' });
+  });
 });

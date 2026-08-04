@@ -10,6 +10,10 @@ export function errorHandler(err, req, res, next) {
   if (res.headersSent) return next(err);
   let status = err.status ?? 500;
   let message = err.message;
+  if (err.type === 'entity.parse.failed') {
+    status = 400;
+    message = 'invalid JSON';
+  }
   if (err.name === 'MulterError') {
     status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 422;
     message = err.code === 'LIMIT_FILE_SIZE' ? 'file too large (max 20 MB)' : err.message;

@@ -15,6 +15,7 @@ export function createApp() {
       maxAge: 30 * 24 * 60 * 60 * 1000,
       sameSite: 'lax',
       httpOnly: true,
+      secure: process.env.COOKIE_SECURE ? process.env.COOKIE_SECURE === '1' : process.env.NODE_ENV === 'production',
     })
   );
 
