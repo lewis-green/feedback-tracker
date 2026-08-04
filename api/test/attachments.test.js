@@ -67,7 +67,7 @@ describe('admin attachments', () => {
   it('requires admin to upload', async () => {
     const admin = await adminAgent();
     const { query: q } = await makeQuery(admin);
-    await uploadFor(anonAgent(), q.id).expect(401);
+    await uploadFor(await anonAgent(), q.id).expect(401);
   });
 
   it('deletes an attachment', async () => {
@@ -93,9 +93,9 @@ describe('attachment file access', () => {
     const { query: q, token } = await makeQuery(admin); // status sent
     const { body: a } = await uploadFor(admin, q.id).expect(201);
 
-    await anonAgent().get(`/api/attachments/${a.id}/file?token=${token}`).expect(200);
-    await anonAgent().get(`/api/attachments/${a.id}/file?token=wrong`).expect(404);
-    await anonAgent().get(`/api/attachments/${a.id}/file`).expect(404);
+    await (await anonAgent()).get(`/api/attachments/${a.id}/file?token=${token}`).expect(200);
+    await (await anonAgent()).get(`/api/attachments/${a.id}/file?token=wrong`).expect(404);
+    await (await anonAgent()).get(`/api/attachments/${a.id}/file`).expect(404);
   });
 
   it('404s when a token from a different query is used', async () => {
@@ -103,14 +103,14 @@ describe('attachment file access', () => {
     const { query: qA } = await makeQuery(admin);
     const { token: tokenB } = await makeQuery(admin);
     const { body: a } = await uploadFor(admin, qA.id).expect(201);
-    await anonAgent().get(`/api/attachments/${a.id}/file?token=${tokenB}`).expect(404);
+    await (await anonAgent()).get(`/api/attachments/${a.id}/file?token=${tokenB}`).expect(404);
   });
 
   it('does not serve files for draft queries via token', async () => {
     const admin = await adminAgent();
     const { query: q, token } = await makeQuery(admin, { status: 'draft' });
     const { body: a } = await uploadFor(admin, q.id).expect(201);
-    await anonAgent().get(`/api/attachments/${a.id}/file?token=${token}`).expect(404);
+    await (await anonAgent()).get(`/api/attachments/${a.id}/file?token=${token}`).expect(404);
   });
 
   it('serves question-level attachments by resolving the owning query', async () => {
@@ -123,6 +123,6 @@ describe('attachment file access', () => {
       question.id,
       a.id,
     ]);
-    await anonAgent().get(`/api/attachments/${a.id}/file?token=${token}`).expect(200);
+    await (await anonAgent()).get(`/api/attachments/${a.id}/file?token=${token}`).expect(200);
   });
 });

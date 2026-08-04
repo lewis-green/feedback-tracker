@@ -1,9 +1,13 @@
+import http from 'node:http';
+import { once } from 'node:events';
 import supertest from 'supertest';
 import { pool, query } from '../src/db.js';
 import { migrate } from '../src/migrate.js';
 import { createApp } from '../src/app.js';
 
 export { pool, query };
+
+const servers = new Set();
 
 export async function setupDb() {
   await migrate();
@@ -13,12 +17,21 @@ export async function resetDb() {
   await query('TRUNCATE projects, queries, questions, attachments RESTART IDENTITY CASCADE');
 }
 
-export function anonAgent() {
-  return supertest.agent(createApp());
+// Bind explicitly to 127.0.0.1 — the address supertest dials. Left to itself supertest
+// calls app.listen(0), which binds the IPv6 wildcard (::); macOS can hand that port out
+// while an unrelated process holds it on IPv4, and requests then reach the foreign
+// process (observed 401/404/405 from other dev servers — a real, if rare, source of
+// flakiness in this suite).
+export async function anonAgent() {
+  const server = http.createServer(createApp());
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  servers.add(server);
+  return supertest.agent(server);
 }
 
 export async function adminAgent() {
-  const agent = anonAgent();
+  const agent = await anonAgent();
   await agent.post('/api/login').send({ password: process.env.ADMIN_PASSWORD }).expect(200);
   return agent;
 }
@@ -44,6 +57,8 @@ export async function makeQuestion(agent, queryId, text = 'Is this ok?') {
   return body;
 }
 
-export function closePool() {
+export async function closePool() {
+  await Promise.all([...servers].map((s) => new Promise((resolve) => s.close(resolve))));
+  servers.clear();
   return pool.end();
 }

@@ -7,13 +7,13 @@ afterAll(closePool);
 
 describe('admin auth', () => {
   it('rejects a wrong password', async () => {
-    const res = await anonAgent().post('/api/login').send({ password: 'nope' });
+    const res = await (await anonAgent()).post('/api/login').send({ password: 'nope' });
     expect(res.status).toBe(401);
     expect(res.body.error).toMatch(/password/);
   });
 
   it('rejects a missing password', async () => {
-    const res = await anonAgent().post('/api/login').send({});
+    const res = await (await anonAgent()).post('/api/login').send({});
     expect(res.status).toBe(401);
   });
 
@@ -24,7 +24,7 @@ describe('admin auth', () => {
   });
 
   it('reports non-admin on /me without a session', async () => {
-    const me = await anonAgent().get('/api/me').expect(200);
+    const me = await (await anonAgent()).get('/api/me').expect(200);
     expect(me.body).toEqual({ admin: false });
   });
 
@@ -36,17 +36,17 @@ describe('admin auth', () => {
   });
 
   it('admin routes 401 without a session', async () => {
-    const res = await anonAgent().get('/api/projects');
+    const res = await (await anonAgent()).get('/api/projects');
     expect(res.status).toBe(401);
   });
 
   it('rejects a non-string password without a 500', async () => {
-    const res = await anonAgent().post('/api/login').send({ password: { a: 1 } });
+    const res = await (await anonAgent()).post('/api/login').send({ password: { a: 1 } });
     expect(res.status).toBe(401);
   });
 
   it('rate limits failed logins per app instance', async () => {
-    const agent = anonAgent();
+    const agent = await anonAgent();
     for (let i = 0; i < 10; i++) {
       await agent.post('/api/login').send({ password: 'wrong' }).expect(401);
     }

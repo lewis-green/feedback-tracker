@@ -53,8 +53,8 @@ describe('questions CRUD', () => {
   });
 
   it('rejects anonymous requests with 401', async () => {
-    await anonAgent().post('/api/queries/1/questions').send({ text: 'X?' }).expect(401);
-    await anonAgent().patch('/api/questions/1').send({ text: 'X?' }).expect(401);
-    await anonAgent().delete('/api/questions/1').expect(401);
+    await (await anonAgent()).post('/api/queries/1/questions').send({ text: 'X?' }).expect(401);
+    await (await anonAgent()).patch('/api/questions/1').send({ text: 'X?' }).expect(401);
+    await (await anonAgent()).delete('/api/questions/1').expect(401);
   });
 });

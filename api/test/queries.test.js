@@ -75,7 +75,7 @@ describe('queries CRUD', () => {
   });
 
   it('rejects anonymous requests to every queries route with 401', async () => {
-    const agent = anonAgent();
+    const agent = await anonAgent();
     await agent.post('/api/projects/1/queries').send({ title: 'T' }).expect(401);
     await agent.get('/api/queries/1').expect(401);
     await agent.patch('/api/queries/1').send({ title: 'T' }).expect(401);
