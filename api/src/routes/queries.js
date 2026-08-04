@@ -42,7 +42,7 @@ router.post('/projects/:id/queries', requireAdmin, async (req, res) => {
 });
 
 router.get('/queries/:id', requireAdmin, async (req, res) => {
-  const { rows: queryRows } = await query('SELECT *, now() AS read_at FROM queries WHERE id = $1', [
+  const { rows: queryRows } = await query('SELECT *, now()::text AS read_at FROM queries WHERE id = $1', [
     req.params.id,
   ]);
   if (!queryRows[0]) throw new HttpError(404, 'query not found');
@@ -50,10 +50,13 @@ router.get('/queries/:id', requireAdmin, async (req, res) => {
   const { rows: projectRows } = await query('SELECT id, name, client_name FROM projects WHERE id = $1', [
     q.project_id,
   ]);
-  const { rows: questions } = await query(
-    'SELECT * FROM questions WHERE query_id = $1 ORDER BY position, id',
+  const { rows: rawQuestions } = await query(
+    'SELECT *, answered_at::text AS answered_at_raw FROM questions WHERE query_id = $1 ORDER BY position, id',
     [q.id]
   );
+  // answered_at_raw is a text-typed passenger used only to compute the seen-stamp below
+  // (see comment there) — strip it before the rows go anywhere near the JSON response.
+  const questions = rawQuestions.map(({ answered_at_raw, ...qs }) => qs);
   const { rows: attachments } = await query(
     `SELECT id, query_id, question_id, uploaded_by, filename, mime, size, created_at
        FROM attachments
@@ -63,12 +66,17 @@ router.get('/queries/:id', requireAdmin, async (req, res) => {
   );
   // Stamp with the newest answered_at we actually rendered (fall back to read_at):
   // guarantees we never claim to have seen an answer newer than what this response contains.
+  // Timestamps are kept as text/timestamptz throughout (never round-tripped through a JS
+  // Date) because Date only has millisecond precision while timestamptz has microseconds —
+  // computing the max in JS would silently truncate and could under-stamp the seen marker.
   const { read_at, ...queryFields } = q;
-  const answeredTimes = questions.map((qs) => qs.answered_at).filter(Boolean);
-  const seenStamp = answeredTimes.length
-    ? new Date(Math.max(read_at.getTime(), ...answeredTimes.map((t) => t.getTime())))
-    : read_at;
-  await query('UPDATE queries SET answers_seen_at = $2 WHERE id = $1', [q.id, seenStamp]);
+  const renderedAnswered = rawQuestions.map((qs) => qs.answered_at_raw).filter(Boolean);
+  await query(
+    `UPDATE queries
+        SET answers_seen_at = GREATEST($2::timestamptz, (SELECT max(t) FROM unnest($3::timestamptz[]) AS t))
+      WHERE id = $1`,
+    [q.id, read_at, renderedAnswered]
+  );
   // answers_seen_at in the response is deliberately the PRE-stamp value so the UI
   // can highlight answers newer than the admin's last visit — don't "fix" this.
   res.json({

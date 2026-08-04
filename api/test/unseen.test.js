@@ -1,5 +1,14 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
-import { setupDb, resetDb, adminAgent, anonAgent, makeQuery, makeQuestion, closePool } from './helpers.js';
+import {
+  setupDb,
+  resetDb,
+  adminAgent,
+  anonAgent,
+  makeQuery,
+  makeQuestion,
+  closePool,
+  query as dbQuery,
+} from './helpers.js';
 
 beforeAll(setupDb);
 beforeEach(resetDb);
@@ -57,16 +66,21 @@ describe('unseen answer tracking', () => {
     expect(list.body[0].unseen_answers).toBe(0);
   });
 
-  it('rendered answers are stamped seen even if answered_at is after read_at', async () => {
-    // Regression for the stamping refinement: if the GET response contains an answer,
-    // that answer must be marked seen even when its answered_at postdates the read_at stamp.
+  it('rendered answers are stamped seen even when answered_at postdates read_at', async () => {
     const admin = await adminAgent();
     const { query: q, token } = await makeQuery(admin);
     const question = await makeQuestion(admin, q.id);
     await (await anonAgent()).put(`/api/share/${token}/questions/${question.id}/answer`).send({ text: 'A' });
+    // Force answered_at into the future so it postdates the GET's read_at (simulates the commit race).
+    await dbQuery(`UPDATE questions SET answered_at = now() + interval '1 second' WHERE id = $1`, [question.id]);
     const got = await admin.get(`/api/queries/${q.id}`).expect(200);
     expect(got.body.questions[0].answer_text).toBe('A'); // rendered
+    const { rows } = await dbQuery(
+      'SELECT answers_seen_at >= (SELECT answered_at FROM questions WHERE id = $2) AS ok FROM queries WHERE id = $1',
+      [q.id, question.id]
+    );
+    expect(rows[0].ok).toBe(true); // stamp covers the rendered answer at FULL microsecond precision
     const list = await admin.get('/api/projects').expect(200);
-    expect(list.body[0].unseen_answers).toBe(0); // therefore seen
+    expect(list.body[0].unseen_answers).toBe(0);
   });
 });
