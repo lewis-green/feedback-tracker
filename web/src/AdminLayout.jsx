@@ -22,7 +22,7 @@ export default function AdminLayout() {
             Question Tracker
           </Link>
           <button
-            onClick={() => api.post('/api/logout').then(() => navigate('/login'))}
+            onClick={() => api.post('/api/logout').then(() => navigate('/login')).catch(() => navigate('/login'))}
             className="text-sm text-neutral-500 hover:text-neutral-900"
           >
             Log out
