@@ -13,7 +13,7 @@ import attachmentRoutes from './routes/attachments.js';
 import createShareRouter, { shareHeaders } from './routes/share.js';
 
 export function createApp() {
-  for (const k of ['SESSION_SECRET', 'ADMIN_PASSWORD']) {
+  for (const k of ['SESSION_SECRET', 'ADMIN_PASSWORD', 'DATABASE_URL']) {
     if (!process.env[k]) throw new Error(`${k} is required`);
   }
   // TRUST_PROXY may legitimately be 0 (trust no proxies); SHARE_RATE_LIMIT and
@@ -28,7 +28,16 @@ export function createApp() {
 
   const app = express();
   app.set('trust proxy', Number(process.env.TRUST_PROXY ?? 1));
-  app.use(helmet());
+  // COOKIE_SECURE=0 signals a deliberate plain-HTTP internal deploy: drop the CSP
+  // directive that would force browsers to upgrade every request to https.
+  const plainHttp = process.env.COOKIE_SECURE === '0';
+  app.use(
+    helmet(
+      plainHttp
+        ? { contentSecurityPolicy: { useDefaults: true, directives: { 'upgrade-insecure-requests': null } }, hsts: false }
+        : {}
+    )
+  );
   app.use(express.json({ limit: '1mb' }));
   app.use(
     cookieSession({

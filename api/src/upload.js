@@ -12,6 +12,8 @@ export const uploadsDir = path.resolve(
 mkdirSync(uploadsDir, { recursive: true });
 
 // SVG is deliberately excluded: it's a stored-XSS vector once clients can upload (Task 8).
+// heic/avif are deliberately excluded too: iOS Safari transcodes camera shots to JPEG on
+// upload, so phone uploads still work without us needing to accept either format directly.
 export const ALLOWED_MIME = /^(image\/(png|jpe?g|gif|webp)$|application\/pdf$)/;
 
 export const upload = multer({

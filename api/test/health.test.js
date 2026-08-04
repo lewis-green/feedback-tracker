@@ -23,4 +23,19 @@ describe('GET /api/health', () => {
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: 'invalid JSON' });
   });
+
+  it('drops upgrade-insecure-requests from CSP when COOKIE_SECURE=0, keeps it otherwise', async () => {
+    const res = await supertest(createApp()).get('/api/health');
+    expect(res.headers['content-security-policy']).toContain('upgrade-insecure-requests');
+
+    const original = process.env.COOKIE_SECURE;
+    process.env.COOKIE_SECURE = '0';
+    try {
+      const plainHttpRes = await supertest(createApp()).get('/api/health');
+      expect(plainHttpRes.headers['content-security-policy']).not.toContain('upgrade-insecure-requests');
+    } finally {
+      if (original === undefined) delete process.env.COOKIE_SECURE;
+      else process.env.COOKIE_SECURE = original;
+    }
+  });
 });

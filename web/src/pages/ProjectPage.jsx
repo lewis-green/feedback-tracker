@@ -9,6 +9,9 @@ export default function ProjectPage() {
   const [data, setData] = useState(null);
   const [title, setTitle] = useState('');
   const [error, setError] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editClientName, setEditClientName] = useState('');
 
   const load = () => api.get(`/api/projects/${id}`).then(setData).catch((e) => setError(e.message));
   useEffect(() => {
@@ -26,10 +29,35 @@ export default function ProjectPage() {
   }
 
   async function deleteProject() {
+    setError('');
     if (!window.confirm(`Delete project "${data.project.name}" and all its queries?`)) return;
     try {
       await api.delete(`/api/projects/${id}`);
       navigate('/');
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function startEdit() {
+    setError('');
+    setEditName(data.project.name);
+    setEditClientName(data.project.client_name ?? '');
+    setEditing(true);
+  }
+
+  function cancelEdit() {
+    setError('');
+    setEditing(false);
+  }
+
+  async function saveEdit(e) {
+    e.preventDefault();
+    setError('');
+    try {
+      await api.patch(`/api/projects/${id}`, { name: editName, client_name: editClientName });
+      await load();
+      setEditing(false);
     } catch (err) {
       setError(err.message);
     }
@@ -41,13 +69,45 @@ export default function ProjectPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">{project.name}</h1>
-          {project.client_name && <p className="text-sm text-neutral-500">Client: {project.client_name}</p>}
+        {editing ? (
+          <form onSubmit={saveEdit} className="flex flex-1 items-end gap-2">
+            <div className="flex-1 space-y-1">
+              <input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Project name"
+                className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm font-medium"
+              />
+              <input
+                value={editClientName}
+                onChange={(e) => setEditClientName(e.target.value)}
+                placeholder="Client name"
+                className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <button className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700">
+              Save
+            </button>
+            <button type="button" onClick={cancelEdit} className="rounded-lg border border-neutral-300 px-4 py-2 text-sm">
+              Cancel
+            </button>
+          </form>
+        ) : (
+          <div>
+            <h1 className="text-xl font-semibold">{project.name}</h1>
+            {project.client_name && <p className="text-sm text-neutral-500">Client: {project.client_name}</p>}
+          </div>
+        )}
+        <div className="flex shrink-0 items-center gap-3">
+          {!editing && (
+            <button onClick={startEdit} className="text-sm text-neutral-500 hover:text-neutral-700">
+              Edit
+            </button>
+          )}
+          <button onClick={deleteProject} className="text-sm text-red-500 hover:text-red-700">
+            Delete project
+          </button>
         </div>
-        <button onClick={deleteProject} className="text-sm text-red-500 hover:text-red-700">
-          Delete project
-        </button>
       </div>
       <ul className="divide-y divide-neutral-200 rounded-xl border border-neutral-200 bg-white">
         {queries.length === 0 && <li className="p-4 text-sm text-neutral-500">No queries yet.</li>}
