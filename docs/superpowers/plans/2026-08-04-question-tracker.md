@@ -8,7 +8,11 @@
 
 **Tech Stack:** Node 20+, Express 5, pg, multer 2, helmet, express-rate-limit, cookie-session, vitest + supertest, Vite, React 19, react-router-dom 7, Tailwind v4 (`@tailwindcss/vite`), marked + dompurify.
 
-**Prerequisites:** PostgreSQL running locally; ability to run `createdb`.
+**Prerequisites:** Postgres runs via `docker-compose.yml` at the repo root (postgres:17, port **15433**, user/password/db `issue_tracker`, plus `issue_tracker_test`). Start with `docker-compose up -d`. Both databases already exist.
+
+Connection URLs:
+- dev: `postgres://issue_tracker:issue_tracker@localhost:15433/issue_tracker`
+- test: `postgres://issue_tracker:issue_tracker@localhost:15433/issue_tracker_test`
 
 ---
 
@@ -112,7 +116,7 @@ npm install -D vitest supertest
 Create `api/.env.example`:
 
 ```bash
-DATABASE_URL=postgres://localhost:5432/issue_tracker
+DATABASE_URL=postgres://issue_tracker:issue_tracker@localhost:15433/issue_tracker
 ADMIN_PASSWORD=change-me
 SESSION_SECRET=generate-a-long-random-string
 PORT=3000
@@ -145,7 +149,8 @@ process.env.NODE_ENV = 'test';
 process.env.SESSION_SECRET = 'test-secret';
 process.env.ADMIN_PASSWORD = 'test-password';
 process.env.DATABASE_URL =
-  process.env.TEST_DATABASE_URL ?? 'postgres://localhost:5432/issue_tracker_test';
+  process.env.TEST_DATABASE_URL ??
+  'postgres://issue_tracker:issue_tracker@localhost:15433/issue_tracker_test';
 process.env.UPLOADS_DIR = fileURLToPath(new URL('./tmp-uploads/', import.meta.url));
 ```
 
@@ -267,11 +272,12 @@ git commit -m "feat(api): scaffold express app with health endpoint and JSON err
 - Create: `api/src/db.js`, `api/src/migrate.js`, `api/migrations/001_init.sql`
 - Test: `api/test/migrate.test.js`
 
-- [ ] **Step 1: Create the databases**
+- [ ] **Step 1: Ensure the databases are up**
+
+Both databases already exist in the Docker container. Just confirm it's running:
 
 ```bash
-createdb issue_tracker || true
-createdb issue_tracker_test || true
+docker-compose up -d && docker-compose exec -T postgres pg_isready -U issue_tracker
 ```
 
 - [ ] **Step 2: Write the failing migration test**
@@ -2986,7 +2992,7 @@ if (process.env.NODE_ENV === 'production') {
 
 ```bash
 cd web && npm run build
-cd ../api && NODE_ENV=production DATABASE_URL=postgres://localhost:5432/issue_tracker \
+cd ../api && NODE_ENV=production DATABASE_URL=postgres://issue_tracker:issue_tracker@localhost:15433/issue_tracker \
   ADMIN_PASSWORD=x SESSION_SECRET=y node src/index.js
 ```
 
@@ -3012,7 +3018,7 @@ which queries have new answers.
 ## Setup
 
 ```bash
-createdb issue_tracker
+docker-compose up -d                            # postgres:17 on :15433
 cd api && npm install && cp .env.example .env   # edit .env
 npm run migrate
 cd ../web && npm install
@@ -3028,8 +3034,7 @@ cd web && npm run dev    # ui on :5173, proxies /api
 ## Tests
 
 ```bash
-createdb issue_tracker_test
-cd api && npm test
+cd api && npm test    # uses issue_tracker_test in the docker postgres
 cd web && npm test
 ```
 
