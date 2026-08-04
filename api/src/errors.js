@@ -18,6 +18,11 @@ export function errorHandler(err, req, res, next) {
     status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 422;
     message = err.code === 'LIMIT_FILE_SIZE' ? 'file too large (max 20 MB)' : err.message;
   }
+  // Postgres: numeric overflow / bad literal from path ids -> treat as not found
+  if (err.code === '22003' || err.code === '22P02') {
+    status = 404;
+    message = 'not found';
+  }
   if (status >= 500) {
     console.error(err);
     message = 'internal server error';

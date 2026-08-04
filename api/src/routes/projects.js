@@ -30,9 +30,10 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   const { name, client_name = '' } = req.body ?? {};
   if (typeof name !== 'string' || !name.trim()) throw new HttpError(422, 'name is required');
+  if (typeof client_name !== 'string') throw new HttpError(422, 'client_name must be a string');
   const { rows } = await query(
     'INSERT INTO projects (name, client_name) VALUES ($1, $2) RETURNING *',
-    [name.trim(), String(client_name)]
+    [name.trim(), client_name.trim()]
   );
   res.status(201).json(rows[0]);
 });
@@ -63,11 +64,13 @@ router.get('/:id', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   const existing = await getProject(req.params.id);
   const name = req.body?.name ?? existing.name;
+  // client_name: null means "no change" (nulls are ignored, not applied), same as an omitted field.
   const clientName = req.body?.client_name ?? existing.client_name;
   if (typeof name !== 'string' || !name.trim()) throw new HttpError(422, 'name is required');
+  if (typeof clientName !== 'string') throw new HttpError(422, 'client_name must be a string');
   const { rows } = await query(
     'UPDATE projects SET name = $1, client_name = $2 WHERE id = $3 RETURNING *',
-    [name.trim(), String(clientName), existing.id]
+    [name.trim(), clientName.trim(), existing.id]
   );
   res.json(rows[0]);
 });
