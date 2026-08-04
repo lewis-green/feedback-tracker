@@ -26,5 +26,23 @@ describe('migrate', () => {
          VALUES (NULL, NULL, 'admin', 'x.png', 'abc', 'image/png', 1)`
       )
     ).rejects.toThrow(/check/i);
+
+    const { rows: [p] } = await pool.query(`INSERT INTO projects (name) VALUES ('P') RETURNING id`);
+    const { rows: [q] } = await pool.query(
+      `INSERT INTO queries (project_id, title, share_token) VALUES ($1, 'T', 'tok-exclusivity-test') RETURNING id`,
+      [p.id]
+    );
+    const { rows: [qs] } = await pool.query(
+      `INSERT INTO questions (query_id, position, text) VALUES ($1, 1, 'Q?') RETURNING id`,
+      [q.id]
+    );
+    await expect(
+      pool.query(
+        `INSERT INTO attachments (query_id, question_id, uploaded_by, filename, stored_path, mime, size)
+         VALUES ($1, $2, 'admin', 'x.png', 'abc', 'image/png', 1)`,
+        [q.id, qs.id]
+      )
+    ).rejects.toThrow(/check/i);
+    await pool.query('DELETE FROM projects WHERE id = $1', [p.id]); // cascades, cleans up
   });
 });

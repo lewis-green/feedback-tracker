@@ -8,6 +8,7 @@ const migrationsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '.
 export async function migrate() {
   const client = await pool.connect();
   try {
+    await client.query('SELECT pg_advisory_lock(727001)');
     await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
       name text PRIMARY KEY,
       applied_at timestamptz NOT NULL DEFAULT now()
@@ -29,6 +30,7 @@ export async function migrate() {
       }
     }
   } finally {
+    await client.query('SELECT pg_advisory_unlock(727001)').catch(() => {});
     client.release();
   }
 }
