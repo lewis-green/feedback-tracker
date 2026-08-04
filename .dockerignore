@@ -1,0 +1,9 @@
+.git
+docs
+node_modules
+**/node_modules
+web/dist
+api/uploads
+api/.env
+api/test/tmp-uploads
+docker-compose.yml
