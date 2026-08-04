@@ -40,6 +40,26 @@ cd web && npm run build
 cd api && NODE_ENV=production node src/index.js   # serves API + web/dist on $PORT
 ```
 
+### Docker
+
+CI publishes `ghcr.io/lewis-green/feedback-tracker` on every push to `main`
+(`.github/workflows/docker.yml`). Migrations run automatically on container
+start.
+
+```bash
+docker run -d -p 3005:3000 \
+  -e DATABASE_URL=postgres://issue_tracker:issue_tracker@host.docker.internal:15433/issue_tracker \
+  -e ADMIN_PASSWORD=... -e SESSION_SECRET=... \
+  -e COOKIE_SECURE=0 \
+  -v feedback_uploads:/app/api/uploads \
+  ghcr.io/lewis-green/feedback-tracker
+```
+
+The image sets `NODE_ENV=production`, so without HTTPS the session cookie is
+silently dropped and login appears to do nothing — that is what
+`COOKIE_SECURE=0` is for. **Omit it when running behind HTTPS** (and see
+`TRUST_PROXY` below).
+
 ### Environment
 
 | Variable | Required | Notes |
