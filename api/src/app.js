@@ -2,8 +2,8 @@ import express from 'express';
 import helmet from 'helmet';
 import cookieSession from 'cookie-session';
 import { errorHandler, HttpError } from './errors.js';
-import { requireAdmin } from './auth.js';
 import createAuthRouter from './routes/auth.js';
+import projectRoutes from './routes/projects.js';
 
 export function createApp() {
   for (const k of ['SESSION_SECRET', 'ADMIN_PASSWORD']) {
@@ -28,7 +28,7 @@ export function createApp() {
   app.get('/api/health', (req, res) => res.json({ ok: true }));
 
   app.use('/api', createAuthRouter());
-  app.use('/api/projects', requireAdmin); // Task 4 mounts the real router
+  app.use('/api/projects', projectRoutes);
 
   app.use('/api', (req, res, next) => next(new HttpError(404, 'not found')));
   app.use(errorHandler);
