@@ -6,11 +6,13 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { HttpError } from './errors.js';
 
-export const uploadsDir =
-  process.env.UPLOADS_DIR ?? path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'uploads');
+export const uploadsDir = path.resolve(
+  process.env.UPLOADS_DIR ?? path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'uploads')
+);
 mkdirSync(uploadsDir, { recursive: true });
 
-const ALLOWED_MIME = /^(image\/|application\/pdf$)/;
+// SVG is deliberately excluded: it's a stored-XSS vector once clients can upload (Task 8).
+export const ALLOWED_MIME = /^(image\/(png|jpe?g|gif|webp)$|application\/pdf$)/;
 
 export const upload = multer({
   storage: multer.diskStorage({
@@ -18,6 +20,7 @@ export const upload = multer({
     filename: (req, file, cb) => cb(null, randomBytes(16).toString('hex')),
   }),
   limits: { fileSize: 20 * 1024 * 1024 },
+  defParamCharset: 'utf8',
   fileFilter: (req, file, cb) => {
     if (ALLOWED_MIME.test(file.mimetype)) cb(null, true);
     else cb(new HttpError(422, 'only images and PDFs are allowed'));

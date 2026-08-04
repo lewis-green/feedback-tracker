@@ -3,7 +3,7 @@ import path from 'node:path';
 import { query } from '../db.js';
 import { requireAdmin } from '../auth.js';
 import { HttpError } from '../errors.js';
-import { upload, uploadsDir, removeFiles } from '../upload.js';
+import { upload, uploadsDir, removeFiles, ALLOWED_MIME } from '../upload.js';
 import { getQueryRow } from './queries.js';
 
 const router = Router();
@@ -26,14 +26,19 @@ export async function insertAttachment({ queryId = null, questionId = null, uplo
 
 router.post('/queries/:id/attachments', requireAdmin, upload.single('file'), async (req, res) => {
   if (!req.file) throw new HttpError(422, 'file is required');
+  if (!req.file.size) {
+    await removeFiles([req.file.filename]);
+    throw new HttpError(422, 'file is empty');
+  }
+  let attachment;
   try {
     const q = await getQueryRow(req.params.id);
-    const attachment = await insertAttachment({ queryId: q.id, uploadedBy: 'admin', file: req.file });
-    res.status(201).json(attachment);
+    attachment = await insertAttachment({ queryId: q.id, uploadedBy: 'admin', file: req.file });
   } catch (err) {
     await removeFiles([req.file.filename]);
     throw err;
   }
+  res.status(201).json(attachment);
 });
 
 router.delete('/attachments/:id', requireAdmin, async (req, res) => {
@@ -46,7 +51,7 @@ router.delete('/attachments/:id', requireAdmin, async (req, res) => {
 });
 
 // Streaming: admin session OR ?token= matching the owning query (which must not be draft).
-router.get('/attachments/:id/file', async (req, res) => {
+router.get('/attachments/:id/file', async (req, res, next) => {
   const { rows } = await query(
     `SELECT a.*, COALESCE(a.query_id, qs.query_id) AS owner_query_id
        FROM attachments a
@@ -57,19 +62,32 @@ router.get('/attachments/:id/file', async (req, res) => {
   const a = rows[0];
   if (!a) throw new HttpError(404, 'attachment not found');
   if (!req.session?.admin) {
+    // status <> 'draft' deliberately includes 'closed': closed queries stay readable
+    // (spec: read-only, not invisible).
     const { rowCount } = await query(
       `SELECT 1 FROM queries WHERE id = $1 AND share_token = $2 AND status <> 'draft'`,
       [a.owner_query_id, String(req.query.token ?? '')]
     );
     if (!rowCount) throw new HttpError(404, 'attachment not found');
   }
+  // The DB column is not a single point of trust: re-validate at serve time so a
+  // corrupted/tampered mime value can't inject headers or spoof content type.
+  const mime = ALLOWED_MIME.test(a.mime) ? a.mime : 'application/octet-stream';
   const safeName = a.filename.replace(/[^\w.\- ]/g, '_');
-  res.sendFile(path.join(uploadsDir, path.basename(a.stored_path)), {
-    headers: {
-      'Content-Type': a.mime,
-      'Content-Disposition': `inline; filename="${safeName}"`,
+  res.sendFile(
+    path.join(uploadsDir, path.basename(a.stored_path)),
+    {
+      cacheControl: false,
+      headers: {
+        'Content-Type': mime,
+        'Content-Disposition': `inline; filename="${safeName}"`,
+        'Cache-Control': 'private, no-store',
+      },
     },
-  });
+    (err) => {
+      if (err && !res.headersSent) next(new HttpError(404, 'attachment not found'));
+    }
+  );
 });
 
 export default router;

@@ -46,6 +46,24 @@ describe('admin attachments', () => {
       .expect(422);
   });
 
+  it('rejects oversize uploads', async () => {
+    const agent = await adminAgent();
+    const { query: q } = await makeQuery(agent);
+    await agent
+      .post(`/api/queries/${q.id}/attachments`)
+      .attach('file', Buffer.alloc(21 * 1024 * 1024), { filename: 'big.png', contentType: 'image/png' })
+      .expect(413);
+  });
+
+  it('rejects svg (stored-XSS vector)', async () => {
+    const agent = await adminAgent();
+    const { query: q } = await makeQuery(agent);
+    await agent
+      .post(`/api/queries/${q.id}/attachments`)
+      .attach('file', Buffer.from('<svg></svg>'), { filename: 'evil.svg', contentType: 'image/svg+xml' })
+      .expect(422);
+  });
+
   it('requires admin to upload', async () => {
     const admin = await adminAgent();
     const { query: q } = await makeQuery(admin);
@@ -78,6 +96,14 @@ describe('attachment file access', () => {
     await anonAgent().get(`/api/attachments/${a.id}/file?token=${token}`).expect(200);
     await anonAgent().get(`/api/attachments/${a.id}/file?token=wrong`).expect(404);
     await anonAgent().get(`/api/attachments/${a.id}/file`).expect(404);
+  });
+
+  it('404s when a token from a different query is used', async () => {
+    const admin = await adminAgent();
+    const { query: qA } = await makeQuery(admin);
+    const { token: tokenB } = await makeQuery(admin);
+    const { body: a } = await uploadFor(admin, qA.id).expect(201);
+    await anonAgent().get(`/api/attachments/${a.id}/file?token=${tokenB}`).expect(404);
   });
 
   it('does not serve files for draft queries via token', async () => {
