@@ -147,3 +147,76 @@ describe('POST /api/share/:token/questions/:questionId/attachments', () => {
       .expect(422);
   });
 });
+
+describe('share surface hardening', () => {
+  it('429s after the per-window share rate limit', async () => {
+    const admin = await adminAgent();
+    const { token } = await makeQuery(admin);
+    process.env.SHARE_RATE_LIMIT = '2';
+    try {
+      const agent = anonAgent();
+      await agent.get(`/api/share/${token}`).expect(200);
+      await agent.get(`/api/share/${token}`).expect(200);
+      const res = await agent.get(`/api/share/${token}`).expect(429);
+      expect(res.body).toEqual({ error: 'too many requests' });
+    } finally {
+      delete process.env.SHARE_RATE_LIMIT;
+    }
+  });
+
+  it('404s PUT and POST against a draft query token', async () => {
+    const admin = await adminAgent();
+    const { query: q, token } = await makeQuery(admin, { status: 'draft' });
+    const question = await makeQuestion(admin, q.id);
+    await anonAgent()
+      .put(`/api/share/${token}/questions/${question.id}/answer`)
+      .send({ text: 'x' })
+      .expect(404);
+    await anonAgent()
+      .post(`/api/share/${token}/questions/${question.id}/attachments`)
+      .attach('file', png, { filename: 's.png', contentType: 'image/png' })
+      .expect(404);
+  });
+
+  it('422s when the answer exceeds the length cap', async () => {
+    const admin = await adminAgent();
+    const { query: q, token } = await makeQuery(admin);
+    const question = await makeQuestion(admin, q.id);
+    await anonAgent()
+      .put(`/api/share/${token}/questions/${question.id}/answer`)
+      .send({ text: 'x'.repeat(10001) })
+      .expect(422);
+  });
+
+  it('404s for a non-numeric questionId', async () => {
+    const admin = await adminAgent();
+    const { token } = await makeQuery(admin);
+    await anonAgent()
+      .put(`/api/share/${token}/questions/abc/answer`)
+      .send({ text: 'x' })
+      .expect(404);
+  });
+
+  it('strips internal ids and stored_path from attachments in the share view', async () => {
+    const admin = await adminAgent();
+    const { query: q, token } = await makeQuery(admin);
+    const question = await makeQuestion(admin, q.id);
+    await admin
+      .post(`/api/queries/${q.id}/attachments`)
+      .attach('file', png, { filename: 'a.png', contentType: 'image/png' })
+      .expect(201);
+    await anonAgent()
+      .post(`/api/share/${token}/questions/${question.id}/attachments`)
+      .attach('file', png, { filename: 'b.png', contentType: 'image/png' })
+      .expect(201);
+
+    const res = await anonAgent().get(`/api/share/${token}`).expect(200);
+    const all = [...res.body.attachments, ...res.body.questions.flatMap((qs) => qs.attachments)];
+    expect(all).toHaveLength(2);
+    for (const a of all) {
+      expect(a.stored_path).toBeUndefined();
+      expect(a.query_id).toBeUndefined();
+      expect(a.question_id).toBeUndefined();
+    }
+  });
+});

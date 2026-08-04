@@ -8,7 +8,7 @@ import projectRoutes from './routes/projects.js';
 import queryRoutes from './routes/queries.js';
 import questionRoutes from './routes/questions.js';
 import attachmentRoutes from './routes/attachments.js';
-import shareRoutes from './routes/share.js';
+import createShareRouter from './routes/share.js';
 
 export function createApp() {
   for (const k of ['SESSION_SECRET', 'ADMIN_PASSWORD']) {
@@ -16,7 +16,7 @@ export function createApp() {
   }
 
   const app = express();
-  app.set('trust proxy', 1);
+  app.set('trust proxy', Number(process.env.TRUST_PROXY ?? 1));
   app.use(helmet());
   app.use(express.json({ limit: '1mb' }));
   app.use(
@@ -39,17 +39,26 @@ export function createApp() {
   app.use('/api', attachmentRoutes);
 
   // Anonymous magic-link surface: rate-limited separately since it's not behind auth.
-  // The test-env skip is deliberate — unlike the login limiter, share tests legitimately
-  // hammer these routes (the attachment-cap test alone makes 11 uploads).
+  // Limits are env-driven (not skipped in test) so tests can tighten them to exercise
+  // 429s; every test builds its own app via createApp(), so each gets a fresh limiter
+  // store and tests don't bleed into each other.
   const shareLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 300,
+    limit: Number(process.env.SHARE_RATE_LIMIT ?? 300),
     standardHeaders: true,
     legacyHeaders: false,
-    skip: () => process.env.NODE_ENV === 'test',
     message: { error: 'too many requests' },
   });
-  app.use('/api/share', shareLimiter, shareRoutes);
+  // Uploads get their own, tighter bucket: anonymous multipart writes to disk are the
+  // most expensive thing this surface allows.
+  const shareUploadLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: Number(process.env.SHARE_UPLOAD_RATE_LIMIT ?? 30),
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'too many requests' },
+  });
+  app.use('/api/share', shareLimiter, createShareRouter({ uploadLimiter: shareUploadLimiter }));
 
   app.use('/api', (req, res, next) => next(new HttpError(404, 'not found')));
   app.use(errorHandler);
