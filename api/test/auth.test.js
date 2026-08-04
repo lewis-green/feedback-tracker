@@ -39,4 +39,19 @@ describe('admin auth', () => {
     const res = await anonAgent().get('/api/projects');
     expect(res.status).toBe(401);
   });
+
+  it('rejects a non-string password without a 500', async () => {
+    const res = await anonAgent().post('/api/login').send({ password: { a: 1 } });
+    expect(res.status).toBe(401);
+  });
+
+  it('rate limits failed logins per app instance', async () => {
+    const agent = anonAgent();
+    for (let i = 0; i < 10; i++) {
+      await agent.post('/api/login').send({ password: 'wrong' }).expect(401);
+    }
+    const res = await agent.post('/api/login').send({ password: 'wrong' });
+    expect(res.status).toBe(429);
+    expect(res.body).toEqual({ error: 'too many login attempts' });
+  });
 });

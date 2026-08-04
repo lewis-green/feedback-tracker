@@ -3,9 +3,13 @@ import helmet from 'helmet';
 import cookieSession from 'cookie-session';
 import { errorHandler, HttpError } from './errors.js';
 import { requireAdmin } from './auth.js';
-import authRoutes from './routes/auth.js';
+import createAuthRouter from './routes/auth.js';
 
 export function createApp() {
+  for (const k of ['SESSION_SECRET', 'ADMIN_PASSWORD']) {
+    if (!process.env[k]) throw new Error(`${k} is required`);
+  }
+
   const app = express();
   app.set('trust proxy', 1);
   app.use(helmet());
@@ -23,7 +27,7 @@ export function createApp() {
 
   app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-  app.use('/api', authRoutes);
+  app.use('/api', createAuthRouter());
   app.use('/api/projects', requireAdmin); // Task 4 mounts the real router
 
   app.use('/api', (req, res, next) => next(new HttpError(404, 'not found')));
