@@ -16,6 +16,8 @@ router.post('/queries/:id/questions', requireAdmin, async (req, res) => {
   const q = await getQueryRow(req.params.id);
   const text = req.body?.text;
   if (typeof text !== 'string' || !text.trim()) throw new HttpError(422, 'text is required');
+  // MAX(position)+1 can race under concurrent inserts, producing duplicate positions.
+  // Accepted: single admin, and reads use ORDER BY position, id so ties stay stable.
   const { rows } = await query(
     `INSERT INTO questions (query_id, position, text)
      VALUES ($1, (SELECT COALESCE(MAX(position), 0) + 1 FROM questions WHERE query_id = $1), $2)
@@ -36,7 +38,9 @@ router.patch('/questions/:id', requireAdmin, async (req, res) => {
   const text = req.body?.text ?? existing.text;
   const position = req.body?.position ?? existing.position;
   if (typeof text !== 'string' || !text.trim()) throw new HttpError(422, 'text is required');
-  if (!Number.isInteger(position) || position < 1) throw new HttpError(422, 'position must be a positive integer');
+  if (!Number.isInteger(position) || position < 1 || position > 2147483647) {
+    throw new HttpError(422, 'position must be a positive integer'); // upper bound: pg int4, else 22003 masks as 404
+  }
   const { rows } = await query(
     'UPDATE questions SET text = $1, position = $2 WHERE id = $3 RETURNING *',
     [text.trim(), position, existing.id]
