@@ -4,6 +4,7 @@ import { query } from '../db.js';
 import { requireAdmin } from '../auth.js';
 import { HttpError } from '../errors.js';
 import { getProject } from './projects.js';
+import { removeFiles } from '../upload.js';
 
 const STATUSES = ['draft', 'sent', 'closed'];
 // 256-bit token: collision probability is negligible (birthday bound ~2^128); a
@@ -103,7 +104,14 @@ router.post('/queries/:id/regenerate-token', requireAdmin, async (req, res) => {
 
 router.delete('/queries/:id', requireAdmin, async (req, res) => {
   const existing = await getQueryRow(req.params.id);
-  await query('DELETE FROM queries WHERE id = $1', [existing.id]); // cascades; file cleanup added in Task 7
+  const { rows: files } = await query(
+    `SELECT a.stored_path FROM attachments a
+       LEFT JOIN questions qs ON qs.id = a.question_id
+      WHERE a.query_id = $1 OR qs.query_id = $1`,
+    [existing.id]
+  );
+  await query('DELETE FROM queries WHERE id = $1', [existing.id]); // cascades
+  await removeFiles(files.map((f) => f.stored_path));
   res.status(204).end();
 });
 

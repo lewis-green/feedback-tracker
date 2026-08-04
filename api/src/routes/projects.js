@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { query } from '../db.js';
 import { requireAdmin } from '../auth.js';
 import { HttpError } from '../errors.js';
+import { removeFiles } from '../upload.js';
 
 const router = Router();
 router.use(requireAdmin);
@@ -77,7 +78,15 @@ router.patch('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   const project = await getProject(req.params.id);
-  await query('DELETE FROM projects WHERE id = $1', [project.id]); // cascades; file cleanup added in Task 7
+  const { rows: files } = await query(
+    `SELECT a.stored_path FROM attachments a
+       LEFT JOIN questions qs ON qs.id = a.question_id
+       LEFT JOIN queries q ON q.id = COALESCE(a.query_id, qs.query_id)
+      WHERE q.project_id = $1`,
+    [project.id]
+  );
+  await query('DELETE FROM projects WHERE id = $1', [project.id]); // cascades
+  await removeFiles(files.map((f) => f.stored_path));
   res.status(204).end();
 });
 

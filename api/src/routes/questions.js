@@ -3,6 +3,7 @@ import { query } from '../db.js';
 import { requireAdmin } from '../auth.js';
 import { HttpError } from '../errors.js';
 import { getQueryRow } from './queries.js';
+import { removeFiles } from '../upload.js';
 
 const router = Router();
 // Mounted at /api — guard per-route (see the guard placement rule in queries.js).
@@ -50,7 +51,11 @@ router.patch('/questions/:id', requireAdmin, async (req, res) => {
 
 router.delete('/questions/:id', requireAdmin, async (req, res) => {
   const existing = await getQuestionRow(req.params.id);
-  await query('DELETE FROM questions WHERE id = $1', [existing.id]); // cascades; file cleanup added in Task 7
+  const { rows: files } = await query('SELECT stored_path FROM attachments WHERE question_id = $1', [
+    existing.id,
+  ]);
+  await query('DELETE FROM questions WHERE id = $1', [existing.id]); // cascades
+  await removeFiles(files.map((f) => f.stored_path));
   res.status(204).end();
 });
 
