@@ -8,11 +8,20 @@ import projectRoutes from './routes/projects.js';
 import queryRoutes from './routes/queries.js';
 import questionRoutes from './routes/questions.js';
 import attachmentRoutes from './routes/attachments.js';
-import createShareRouter from './routes/share.js';
+import createShareRouter, { shareHeaders } from './routes/share.js';
 
 export function createApp() {
   for (const k of ['SESSION_SECRET', 'ADMIN_PASSWORD']) {
     if (!process.env[k]) throw new Error(`${k} is required`);
+  }
+  // TRUST_PROXY may legitimately be 0 (trust no proxies); SHARE_RATE_LIMIT and
+  // SHARE_UPLOAD_RATE_LIMIT must be strictly positive — Number('') is 0, not NaN, so
+  // without the <= 0 check an accidentally-blank env var silently 429s every request.
+  for (const k of ['TRUST_PROXY', 'SHARE_RATE_LIMIT', 'SHARE_UPLOAD_RATE_LIMIT']) {
+    if (process.env[k] === undefined) continue;
+    const n = Number(process.env[k]);
+    if (Number.isNaN(n)) throw new Error(`${k} must be a number`);
+    if (k !== 'TRUST_PROXY' && n <= 0) throw new Error(`${k} must be a number`);
   }
 
   const app = express();
@@ -58,7 +67,7 @@ export function createApp() {
     legacyHeaders: false,
     message: { error: 'too many requests' },
   });
-  app.use('/api/share', shareLimiter, createShareRouter({ uploadLimiter: shareUploadLimiter }));
+  app.use('/api/share', shareHeaders, shareLimiter, createShareRouter({ uploadLimiter: shareUploadLimiter }));
 
   app.use('/api', (req, res, next) => next(new HttpError(404, 'not found')));
   app.use(errorHandler);

@@ -1,11 +1,13 @@
 import { Router } from 'express';
-import { query } from '../db.js';
+import { pool, query } from '../db.js';
 import { HttpError } from '../errors.js';
 import { upload, removeFiles } from '../upload.js';
 
 // Client attachments per question are capped to bound disk usage from anonymous uploads.
-// The cap is enforced atomically inside the INSERT itself (see the POST route below) —
-// a read-then-insert count check would let concurrent uploads race past the limit.
+// The cap is enforced by serialising on the question row (SELECT ... FOR UPDATE) inside
+// a transaction (see the POST route below) — a conditional INSERT alone isn't enough:
+// under READ COMMITTED each concurrent statement sees its own snapshot, so N concurrent
+// uploads can all pass the "count < cap" check before any of them commit.
 const MAX_CLIENT_ATTACHMENTS_PER_QUESTION = 10;
 const MAX_ANSWER_LENGTH = 10000;
 
@@ -42,17 +44,18 @@ async function resolveShareQuestion(req, res, next) {
   next();
 }
 
+// These responses are addressed by an unguessable token and must never be cached by
+// shared caches/browsers or indexed by crawlers that might follow a leaked link. Mounted
+// ahead of the rate limiter in app.js so 429 responses carry the headers too.
+export function shareHeaders(req, res, next) {
+  res.set('Cache-Control', 'no-store');
+  res.set('X-Robots-Tag', 'noindex');
+  next();
+}
+
 export default function createShareRouter({ uploadLimiter }) {
   const router = Router();
   // Mounted at /api/share — anonymous surface: auth is possession of the share token.
-
-  // These responses are addressed by an unguessable token and must never be cached by
-  // shared caches/browsers or indexed by crawlers that might follow a leaked link.
-  router.use((req, res, next) => {
-    res.set('Cache-Control', 'no-store');
-    res.set('X-Robots-Tag', 'noindex');
-    next();
-  });
 
   router.get('/:token', async (req, res) => {
     const q = await findByToken(req.params.token);
@@ -90,10 +93,8 @@ export default function createShareRouter({ uploadLimiter }) {
     });
   });
 
-  router.put('/:token/questions/:questionId/answer', async (req, res) => {
-    const q = await findByToken(req.params.token);
-    if (q.status === 'closed') throw new HttpError(403, 'this query has been closed');
-    const question = await findQuestion(q.id, req.params.questionId);
+  router.put('/:token/questions/:questionId/answer', resolveShareQuestion, async (req, res) => {
+    const { shareQuery: q, shareQuestion: question } = req;
     const text = req.body?.text;
     if (typeof text !== 'string') throw new HttpError(422, 'text is required');
     if (text.length > MAX_ANSWER_LENGTH) {
@@ -101,7 +102,7 @@ export default function createShareRouter({ uploadLimiter }) {
     }
     const cleared = text.trim() === '';
     // The WHERE also re-checks query_id, defensive against the question being deleted
-    // between the findQuestion read above and this write.
+    // between the resolveShareQuestion read above and this write.
     const { rows } = await query(
       `UPDATE questions
           SET answer_text = $1, answered_at = CASE WHEN $2 THEN NULL ELSE now() END
@@ -122,22 +123,41 @@ export default function createShareRouter({ uploadLimiter }) {
       if (!req.file) throw new HttpError(422, 'file is required');
       try {
         if (!req.file.size) throw new HttpError(422, 'file is empty');
-        const { rows } = await query(
-          `INSERT INTO attachments (query_id, question_id, uploaded_by, filename, stored_path, mime, size)
-           SELECT NULL, $1, 'client', $2, $3, $4, $5
-            WHERE (SELECT count(*) FROM attachments WHERE question_id = $1 AND uploaded_by = 'client') < $6
-           RETURNING id, query_id, question_id, uploaded_by, filename, mime, size, created_at`,
-          [
-            req.shareQuestion.id,
-            req.file.originalname,
-            req.file.filename,
-            req.file.mimetype,
-            req.file.size,
-            MAX_CLIENT_ATTACHMENTS_PER_QUESTION,
-          ]
-        );
-        if (!rows[0]) throw new HttpError(422, 'attachment limit reached for this question');
-        res.status(201).json(rows[0]);
+        const question = req.shareQuestion;
+        const client = await pool.connect();
+        let inserted;
+        try {
+          await client.query('BEGIN');
+          // Lock the parent question row so the count-check + insert below runs
+          // serialised across concurrent uploads — see the comment at the top of
+          // this file for why a conditional INSERT alone isn't sufficient.
+          await client.query('SELECT id FROM questions WHERE id = $1 FOR UPDATE', [question.id]);
+          const { rows: c } = await client.query(
+            `SELECT count(*)::int AS n FROM attachments WHERE question_id = $1 AND uploaded_by = 'client'`,
+            [question.id]
+          );
+          if (c[0].n >= MAX_CLIENT_ATTACHMENTS_PER_QUESTION) {
+            await client.query('ROLLBACK');
+            throw new HttpError(422, 'attachment limit reached for this question');
+          }
+          const { rows } = await client.query(
+            `INSERT INTO attachments (query_id, question_id, uploaded_by, filename, stored_path, mime, size)
+             VALUES (NULL, $1, 'client', $2, $3, $4, $5)
+             RETURNING id, uploaded_by, filename, mime, size, created_at`,
+            [question.id, req.file.originalname, req.file.filename, req.file.mimetype, req.file.size]
+          );
+          await client.query('COMMIT');
+          inserted = rows[0];
+        } catch (e) {
+          await client.query('ROLLBACK').catch(() => {});
+          throw e;
+        } finally {
+          client.release();
+        }
+        // RETURNING above deliberately omits query_id/question_id (matching the share
+        // GET projection, which strips them) — add question_id back here so the create
+        // response shape stays what callers already depend on.
+        res.status(201).json({ ...inserted, query_id: null, question_id: question.id });
       } catch (err) {
         await removeFiles([req.file.filename]);
         throw err;

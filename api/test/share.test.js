@@ -1,5 +1,14 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
-import { setupDb, resetDb, adminAgent, anonAgent, makeQuery, makeQuestion, closePool } from './helpers.js';
+import {
+  setupDb,
+  resetDb,
+  adminAgent,
+  anonAgent,
+  makeQuery,
+  makeQuestion,
+  closePool,
+  query as dbQuery,
+} from './helpers.js';
 
 beforeAll(setupDb);
 beforeEach(resetDb);
@@ -145,6 +154,30 @@ describe('POST /api/share/:token/questions/:questionId/attachments', () => {
       .post(`/api/share/${token}/questions/${question.id}/attachments`)
       .attach('file', png, { filename: 'onetoomany.png', contentType: 'image/png' })
       .expect(422);
+  });
+
+  it('serialises the cap under concurrent uploads (no overshoot)', async () => {
+    const admin = await adminAgent();
+    const { query: q, token } = await makeQuery(admin);
+    const question = await makeQuestion(admin, q.id);
+    const agent = await anonAgent();
+
+    const results = await Promise.all(
+      Array.from({ length: 25 }, (_, i) =>
+        agent
+          .post(`/api/share/${token}/questions/${question.id}/attachments`)
+          .attach('file', png, { filename: `c${i}.png`, contentType: 'image/png' })
+      )
+    );
+    for (const r of results) {
+      expect([201, 422]).toContain(r.status);
+    }
+
+    const { rows } = await dbQuery(
+      `SELECT count(*)::int AS n FROM attachments WHERE question_id = $1 AND uploaded_by = 'client'`,
+      [question.id]
+    );
+    expect(rows[0].n).toBe(10);
   });
 });
 
