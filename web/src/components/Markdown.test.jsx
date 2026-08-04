@@ -17,4 +17,26 @@ describe('Markdown', () => {
       '/api/attachments/5/file?token=tok123'
     );
   });
+
+  it('does not leak the token onto external urls', () => {
+    const { container } = render(
+      <Markdown text={'![m](https://evil.example/p/api/attachments/1/file)'} token="tok123" />
+    );
+    expect(container.querySelector('img')?.getAttribute('src')).not.toContain('tok');
+  });
+
+  it('strips forbidden interactive tags like form/input', () => {
+    const { container } = render(
+      <Markdown text={'<form action="https://evil.example"><input></form>'} />
+    );
+    expect(container.querySelector('form')).toBeNull();
+    expect(container.querySelector('input')).toBeNull();
+  });
+
+  it('does not leak the token into code spans', () => {
+    const { container } = render(
+      <Markdown text={'`see /api/attachments/1/file`'} token="tok123" />
+    );
+    expect(container.querySelector('code')?.textContent).not.toContain('?token');
+  });
 });

@@ -17,30 +17,34 @@ export default function QueryPage() {
   const [preview, setPreview] = useState(false);
   const bodyRef = useRef(null);
 
-  async function load() {
+  async function load({ resetDraft = false } = {}) {
     try {
       const data = await api.get(`/api/queries/${id}`);
       setQ(data);
-      setTitle(data.title);
-      setBody(data.body);
+      if (resetDraft) {
+        setTitle(data.title);
+        setBody(data.body);
+      }
     } catch (e) {
       setError(e.message);
     }
   }
   useEffect(() => {
-    load();
+    load({ resetDraft: true });
   }, [id]);
 
   async function saveMeta() {
+    setError('');
     try {
       await api.patch(`/api/queries/${id}`, { title, body });
-      await load();
+      await load({ resetDraft: true });
     } catch (e) {
       setError(e.message);
     }
   }
 
   async function setStatus(status) {
+    setError('');
     try {
       await api.patch(`/api/queries/${id}`, { status });
       await load();
@@ -53,13 +57,13 @@ export default function QueryPage() {
     const file = [...(e.clipboardData?.files ?? [])][0];
     if (!file) return;
     e.preventDefault();
+    setError('');
+    const pos = bodyRef.current?.selectionStart ?? body.length;
     const fd = new FormData();
     fd.append('file', file, file.name || 'pasted.png');
     try {
       const a = await api.post(`/api/queries/${id}/attachments`, fd);
       const insert = `\n![${a.filename}](/api/attachments/${a.id}/file)\n`;
-      const el = bodyRef.current;
-      const pos = el?.selectionStart ?? body.length;
       setBody((b) => b.slice(0, pos) + insert + b.slice(pos));
     } catch (err) {
       setError(err.message);
@@ -69,6 +73,7 @@ export default function QueryPage() {
   async function uploadFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
+    setError('');
     const fd = new FormData();
     fd.append('file', file);
     try {
@@ -83,6 +88,7 @@ export default function QueryPage() {
   async function addQuestion(e) {
     e.preventDefault();
     if (!newQuestion.trim()) return;
+    setError('');
     try {
       await api.post(`/api/queries/${id}/questions`, { text: newQuestion });
       setNewQuestion('');
@@ -96,6 +102,7 @@ export default function QueryPage() {
     const a = q.questions[idx];
     const b = q.questions[idx + dir];
     if (!b) return;
+    setError('');
     try {
       await api.patch(`/api/questions/${a.id}`, { position: b.position });
       await api.patch(`/api/questions/${b.id}`, { position: a.position });
@@ -107,6 +114,7 @@ export default function QueryPage() {
 
   async function deleteQuestion(question) {
     if (!window.confirm('Delete this question (and any client attachments on it)?')) return;
+    setError('');
     try {
       await api.delete(`/api/questions/${question.id}`);
       await load();
@@ -117,6 +125,7 @@ export default function QueryPage() {
 
   async function deleteQuery() {
     if (!window.confirm(`Delete query "${q.title}"?`)) return;
+    setError('');
     try {
       await api.delete(`/api/queries/${id}`);
       navigate(`/projects/${q.project.id}`);
@@ -127,6 +136,7 @@ export default function QueryPage() {
 
   async function regenerate() {
     if (!window.confirm('Regenerate the link? The old link will stop working.')) return;
+    setError('');
     try {
       await api.post(`/api/queries/${id}/regenerate-token`);
       await load();
@@ -136,9 +146,13 @@ export default function QueryPage() {
   }
 
   function copyLink() {
-    navigator.clipboard.writeText(`${window.location.origin}/s/${q.share_token}`);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    const link = `${window.location.origin}/s/${q.share_token}`;
+    Promise.resolve(navigator.clipboard?.writeText(link) ?? Promise.reject(new Error('no clipboard')))
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => setError('Copy failed — select the link text and copy manually.'));
   }
 
   if (error && !q) return <p className="text-sm text-red-600">{error}</p>;
@@ -241,6 +255,8 @@ export default function QueryPage() {
         <AttachmentList
           attachments={q.attachments}
           onDelete={async (a) => {
+            if (!window.confirm(`Delete "${a.filename}"?`)) return;
+            setError('');
             try {
               await api.delete(`/api/attachments/${a.id}`);
               await load();

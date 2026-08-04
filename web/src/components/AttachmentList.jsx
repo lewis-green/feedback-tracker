@@ -17,6 +17,7 @@ export default function AttachmentList({ attachments, token, onDelete }) {
           </a>
           {onDelete && (
             <button
+              type="button"
               onClick={() => onDelete(a)}
               className="absolute -right-2 -top-2 hidden h-5 w-5 items-center justify-center rounded-full bg-red-600 text-xs text-white group-hover:flex"
               title="Delete attachment"
