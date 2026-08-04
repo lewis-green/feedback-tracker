@@ -61,10 +61,14 @@ router.get('/queries/:id', requireAdmin, async (req, res) => {
       ORDER BY created_at, id`,
     [q.id, questions.map((x) => x.id)]
   );
-  // Stamp with the read-time timestamp (not now()) so an answer that lands between
-  // the reads above and this UPDATE isn't marked seen without ever being shown.
-  await query('UPDATE queries SET answers_seen_at = $2 WHERE id = $1', [q.id, q.read_at]);
+  // Stamp with the newest answered_at we actually rendered (fall back to read_at):
+  // guarantees we never claim to have seen an answer newer than what this response contains.
   const { read_at, ...queryFields } = q;
+  const answeredTimes = questions.map((qs) => qs.answered_at).filter(Boolean);
+  const seenStamp = answeredTimes.length
+    ? new Date(Math.max(read_at.getTime(), ...answeredTimes.map((t) => t.getTime())))
+    : read_at;
+  await query('UPDATE queries SET answers_seen_at = $2 WHERE id = $1', [q.id, seenStamp]);
   // answers_seen_at in the response is deliberately the PRE-stamp value so the UI
   // can highlight answers newer than the admin's last visit — don't "fix" this.
   res.json({
