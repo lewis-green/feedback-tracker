@@ -16,7 +16,7 @@ export default function createAuthRouter() {
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: () => 'login', // single admin: one global bucket, immune to X-Forwarded-For spoofing
-    skipSuccessfulRequests: true, // only failed attempts count, so the admin can't be locked out by their own successes
+    skipSuccessfulRequests: true, // the admin can't be locked out by their own successes; a third party's failures DO lock the shared bucket for 15 min (accepted trade-off vs unlimited brute force)
     message: { error: 'too many login attempts' }, // keep the JSON error contract
   });
 
